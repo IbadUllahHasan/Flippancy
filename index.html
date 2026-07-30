@@ -45,11 +45,14 @@
             <button id="addOption" class="ghost">+ Add option</button>
             <button id="decideBtn" class="primary">Arguing… I mean, deciding ➜</button>
             <button id="llmBtn" class="ghost hidden">✨ Get a real take</button>
+            <button id="manageKeysBtn" class="ghost hidden">🔑 Manage keys</button>
           </div>
           <div id="apiKeyBar" class="row gap hidden">
-            <input id="apiKeyInput" type="password" placeholder="Paste your Gemini API key (free at aistudio.google.com)" />
+            <input id="apiKeyInput" type="password" placeholder="Paste another Gemini API key (free at aistudio.google.com)" />
             <button id="saveKey" class="primary">Save key</button>
-            <span class="sub">Stored locally, never sent anywhere except Gemini.</span>
+            <button id="resetKey" class="ghost">Reset all</button>
+            <span class="sub" id="keyCount"></span>
+            <span class="sub">Stored locally, never sent anywhere except Gemini. App rotates on rate limits.</span>
           </div>
 
           <div id="decideResult" class="result hidden"></div>

@@ -490,15 +490,36 @@ function doImport(mode) {
 
 // ---------- LLM (Gemini) ----------
 
-const KEY_STORAGE = "flippancy_gemini_key";
+const KEY_STORAGE = "flippancy_gemini_keys";
 
-function getKey() {
-  return localStorage.getItem(KEY_STORAGE) || "";
+function getKeys() {
+  try {
+    const raw = localStorage.getItem(KEY_STORAGE);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
 }
 
-function setKey(k) {
-  if (k) localStorage.setItem(KEY_STORAGE, k);
-  else localStorage.removeItem(KEY_STORAGE);
+function saveKeys(arr) {
+  localStorage.setItem(KEY_STORAGE, JSON.stringify(arr));
+}
+
+function addKey(k) {
+  const keys = getKeys();
+  if (!keys.includes(k)) keys.push(k);
+  saveKeys(keys);
+}
+
+function clearKeys() {
+  localStorage.removeItem(KEY_STORAGE);
+}
+
+function getKey() {
+  const keys = getKeys();
+  return keys[0] || "";
 }
 
 const apiKeyBar = document.getElementById("apiKeyBar");
@@ -507,9 +528,11 @@ const llmBtn = document.getElementById("llmBtn");
 const saveKeyBtn = document.getElementById("saveKey");
 
 function refreshKeyUi() {
-  const has = !!getKey();
+  const keys = getKeys();
+  const has = keys.length > 0;
   apiKeyBar.classList.toggle("hidden", has);
   llmBtn.classList.toggle("hidden", !has);
+  document.getElementById("keyCount").textContent = has ? `${keys.length} key${keys.length === 1 ? "" : "s"} saved` : "";
   if (has) apiKeyInput.value = "";
 }
 
@@ -518,10 +541,35 @@ refreshKeyUi();
 saveKeyBtn.addEventListener("click", () => {
   const k = apiKeyInput.value.trim();
   if (!k) return;
-  setKey(k);
+  addKey(k);
   refreshKeyUi();
   apiKeyInput.value = "";
 });
+
+document.getElementById("resetKey").addEventListener("click", () => {
+  if (!confirm("Forget all saved API keys?")) return;
+  clearKeys();
+  refreshKeyUi();
+});
+
+const manageKeysBtn = document.getElementById("manageKeysBtn");
+function refreshManageBtn() {
+  const has = getKeys().length > 0;
+  manageKeysBtn.classList.toggle("hidden", !has);
+}
+refreshManageBtn();
+
+manageKeysBtn.addEventListener("click", () => {
+  apiKeyBar.classList.remove("hidden");
+  apiKeyInput.focus();
+});
+
+// wrap refreshKeyUi to also update manage button
+const _refreshKeyUi = refreshKeyUi;
+refreshKeyUi = function () {
+  _refreshKeyUi();
+  refreshManageBtn();
+};
 
 // show key bar if user clicks the button while no key
 llmBtn.addEventListener("click", () => {
@@ -580,70 +628,99 @@ async function runLlm() {
   llmBtn.textContent = phrases[state.mode] || "Thinking…";
   llmBtn.disabled = true;
 
-  try {
-    const key = getKey();
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: buildPrompt(opts, state.mode) }] }],
-        generationConfig: {
-          temperature: state.mode === "sarcastic" ? 0.9 : 0.4,
-          maxOutputTokens: 600,
-          responseMimeType: "application/json",
-        },
-      }),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      let msg;
-      if (res.status === 429) {
-        msg = "Hit Gemini's free tier rate limit. Wait a minute (or switch keys in Settings).";
-      } else if (res.status === 403) {
-        msg = "API key rejected. Check it's valid at aistudio.google.com/apikey.";
-      } else if (res.status === 400) {
-        msg = "Bad request to Gemini. The prompt might be too long or malformed.";
-      } else {
-        msg = `Gemini error ${res.status}. ${errText.slice(0, 120)}`;
-      }
-      const err = new Error(msg);
-      err.status = res.status;
-      throw err;
-    }
-
-    const json = await res.json();
-    const raw = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!raw) throw new Error("Empty response from Gemini.");
-
-    // strip any accidental fences just in case
-    const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      throw new Error("Gemini returned non-JSON. Try again.");
-    }
-
-    renderLlmResult(parsed);
-  } catch (err) {
-    const out = document.getElementById("decideResult");
-    out.innerHTML = `
-      <h3>⚠️ Couldn't reach Gemini</h3>
-      <div class="argue"><div class="con">${escape(err.message)}</div></div>
-      <div class="sub" style="margin-top:10px">Check your API key, or try the local take above. <button id="resetKey" class="ghost" style="padding:4px 10px;margin-left:6px">Reset key</button></div>
-    `;
-    out.classList.remove("hidden");
-    document.getElementById("resetKey").onclick = () => {
-      setKey("");
-      refreshKeyUi();
-    };
-  } finally {
+  const keys = getKeys();
+  if (!keys.length) {
+    apiKeyBar.classList.remove("hidden");
+    apiKeyInput.focus();
     llmBtn.textContent = originalText;
     llmBtn.disabled = false;
+    return;
   }
+
+  let lastErr = null;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    try {
+      llmBtn.textContent = i === 0
+        ? (phrases[state.mode] || "Thinking…")
+        : `Key ${i + 1}/${keys.length} (retry)…`;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: buildPrompt(opts, state.mode) }] }],
+          generationConfig: {
+            temperature: state.mode === "sarcastic" ? 0.9 : 0.4,
+            maxOutputTokens: 600,
+            responseMimeType: "application/json",
+          },
+        }),
+      });
+
+      if (res.status === 429 || res.status === 403) {
+        // try next key
+        lastErr = new Error(
+          res.status === 429
+            ? `Key #${i + 1} hit rate limit.`
+            : `Key #${i + 1} rejected.`
+        );
+        lastErr.status = res.status;
+        continue;
+      }
+
+      if (!res.ok) {
+        const errText = await res.text();
+        let msg;
+        if (res.status === 400) {
+          msg = "Bad request to Gemini. The prompt might be too long or malformed.";
+        } else {
+          msg = `Gemini error ${res.status}. ${errText.slice(0, 120)}`;
+        }
+        throw new Error(msg);
+      }
+
+      const json = await res.json();
+      const raw = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!raw) throw new Error("Empty response from Gemini.");
+
+      const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        throw new Error("Gemini returned non-JSON. Try again.");
+      }
+
+      renderLlmResult(parsed);
+      lastErr = null;
+      break;
+    } catch (err) {
+      if (err.status === 429 || err.status === 403) continue;
+      lastErr = err;
+      break;
+    }
+  }
+
+  if (lastErr) {
+    const out = document.getElementById("decideResult");
+    const allRateLimited = /rate limit/i.test(lastErr.message);
+    out.innerHTML = `
+      <h3>⚠️ ${allRateLimited ? "All your keys hit the rate limit" : "Couldn't reach Gemini"}</h3>
+      <div class="argue"><div class="con">${escape(lastErr.message)}</div></div>
+      <div class="sub" style="margin-top:10px">${
+        allRateLimited
+          ? "Free tier resets soon. Add another key, or wait a few minutes."
+          : "Check your setup, or hit the local take above."
+      }</div>
+    `;
+    out.classList.remove("hidden");
+  }
+
+  llmBtn.textContent = originalText;
+  llmBtn.disabled = false;
 }
 
 function renderLlmResult(p) {
