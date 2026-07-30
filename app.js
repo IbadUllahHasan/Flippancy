@@ -409,3 +409,79 @@ document.getElementById("clearBtn").addEventListener("click", () => {
   save(data);
   renderHistory();
 });
+
+// ---------- import ----------
+
+const importStatus = document.getElementById("importStatus");
+let pendingImport = null;
+
+document.getElementById("importFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const parsed = JSON.parse(ev.target.result);
+      const decisions = Array.isArray(parsed.decisions) ? parsed.decisions : [];
+      const retros = Array.isArray(parsed.retros) ? parsed.retros : [];
+
+      if (!decisions.length && !retros.length) {
+        importStatus.textContent = "Hmm, that file doesn't look right.";
+        return;
+      }
+
+      pendingImport = { decisions, retros, fileName: file.name };
+      importStatus.innerHTML = `Found <b>${decisions.length}</b> decisions and <b>${retros.length}</b> retros. <button id="confirmMerge" class="ghost" style="padding:4px 10px;margin-left:6px">Merge</button> <button id="confirmReplace" class="ghost" style="padding:4px 10px">Replace</button> <button id="cancelImport" class="ghost" style="padding:4px 10px">Cancel</button>`;
+
+      document.getElementById("confirmMerge").onclick = () => doImport("merge");
+      document.getElementById("confirmReplace").onclick = () => doImport("replace");
+      document.getElementById("cancelImport").onclick = () => {
+        pendingImport = null;
+        importStatus.textContent = "Import cancelled.";
+        e.target.value = "";
+      };
+    } catch (err) {
+      importStatus.textContent = "Couldn't read that file. Is it a Flippancy export?";
+    }
+  };
+  reader.readAsText(file);
+});
+
+function doImport(mode) {
+  if (!pendingImport) return;
+  const { decisions, retros } = pendingImport;
+
+  if (mode === "replace") {
+    if (!confirm("Replace everything with the imported data? Your current data will be lost.")) return;
+    data = { decisions, retros };
+  } else {
+    // merge: dedupe by id, prefer imported
+    const seen = new Set();
+    const merged = [];
+    [...data.decisions, ...decisions].forEach((d) => {
+      if (!d || d.id == null) return;
+      if (seen.has(d.id)) return;
+      seen.add(d.id);
+      merged.push(d);
+    });
+    const seenR = new Set();
+    const mergedR = [];
+    [...data.retros, ...retros].forEach((r) => {
+      if (!r || r.id == null) return;
+      if (seenR.has(r.id)) return;
+      seenR.add(r.id);
+      mergedR.push(r);
+    });
+    data = {
+      decisions: merged.sort((a, b) => (b.id || 0) - (a.id || 0)),
+      retros: mergedR.sort((a, b) => (b.id || 0) - (a.id || 0)),
+    };
+  }
+
+  save(data);
+  renderHistory();
+  importStatus.textContent = `Imported ✓ (${decisions.length} decisions, ${retros.length} retros)`;
+  pendingImport = null;
+  document.getElementById("importFile").value = "";
+}

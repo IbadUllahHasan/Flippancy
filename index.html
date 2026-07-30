@@ -80,7 +80,10 @@
 
           <div class="row gap">
             <button id="exportBtn" class="ghost">⬇ Export JSON</button>
+            <label for="importFile" class="ghost as-label">⬆ Import JSON</label>
+            <input type="file" id="importFile" accept="application/json,.json" hidden />
             <button id="clearBtn" class="danger">🗑 Clear everything</button>
+            <span id="importStatus" class="sub"></span>
           </div>
 
           <div id="historyList" class="history"></div>

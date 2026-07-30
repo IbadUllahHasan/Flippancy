@@ -264,6 +264,16 @@ button {
   background: rgba(255, 107, 107, 0.1);
 }
 
+.as-label {
+  display: inline-block;
+  cursor: pointer;
+  user-select: none;
+}
+
+.as-label:hover {
+  background: var(--panel-2);
+}
+
 .result {
   margin-top: 22px;
   padding: 18px;
