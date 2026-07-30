@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flippancy — decide + reflect</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <div class="brand">
+          <span class="logo">🪙</span>
+          <h1>Flippancy</h1>
+        </div>
+        <nav>
+          <button class="tab active" data-tab="decide">🎯 Decide</button>
+          <button class="tab" data-tab="retro">📓 Retro</button>
+          <button class="tab" data-tab="history">🕒 History</button>
+          <button id="theme" class="ghost" title="Toggle theme">🌗</button>
+        </nav>
+      </header>
+
+      <main>
+        <!-- DECIDE -->
+        <section id="decide" class="panel active">
+          <div class="hero">
+            <h2>Stop spiraling. Pick already.</h2>
+            <p class="sub">Drop your options below. I'll argue both sides and make a call.</p>
+          </div>
+
+          <div class="row gap">
+            <div class="modes" role="tablist" aria-label="Coaching tone">
+              <button class="mode active" data-mode="gentle">🌿 Gentle</button>
+              <button class="mode" data-mode="brutal">🔥 Brutal</button>
+              <button class="mode" data-mode="sarcastic">😏 Sarcastic</button>
+            </div>
+          </div>
+
+          <div id="options" class="options">
+            <input class="opt" placeholder="Option A — the thing you're considering" />
+            <input class="opt" placeholder="Option B — the other thing" />
+          </div>
+          <div class="row gap">
+            <button id="addOption" class="ghost">+ Add option</button>
+            <button id="decideBtn" class="primary">Arguing… I mean, deciding ➜</button>
+          </div>
+
+          <div id="decideResult" class="result hidden"></div>
+        </section>
+
+        <!-- RETRO -->
+        <section id="retro" class="panel">
+          <div class="hero">
+            <h2>How'd it go?</h2>
+            <p class="sub">Two minutes now saves a future spiral later.</p>
+          </div>
+
+          <div class="row gap">
+            <div class="modes">
+              <button class="retro-type active" data-type="daily">Daily · 3 questions</button>
+              <button class="retro-type" data-type="weekly">Weekly · 5 questions</button>
+            </div>
+          </div>
+
+          <form id="retroForm" class="form"></form>
+
+          <div class="row gap">
+            <button id="saveRetro" class="primary">Save entry 💾</button>
+            <span id="retroStatus" class="sub"></span>
+          </div>
+        </section>
+
+        <!-- HISTORY -->
+        <section id="history" class="panel">
+          <div class="hero">
+            <h2>Your pattern library</h2>
+            <p class="sub">Past decisions and retro entries, all in one place.</p>
+          </div>
+
+          <div class="row gap">
+            <button id="exportBtn" class="ghost">⬇ Export JSON</button>
+            <button id="clearBtn" class="danger">🗑 Clear everything</button>
+          </div>
+
+          <div id="historyList" class="history"></div>
+        </section>
+      </main>
+
+      <footer>
+        <span class="sub">Made for overthinkers · stored locally in your browser</span>
+      </footer>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
