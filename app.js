@@ -555,14 +555,14 @@ document.getElementById("verifyKey").addEventListener("click", async () => {
   }
   resultEl.textContent = "Checking…";
 
-  // 1. Format check
+  // 1. Format check (AQ. is the new official format as of 2026)
   let formatNote = "";
-  if (k.startsWith("AIza")) {
-    formatNote = "✅ Looks like an AI Studio key (`AIza...`).";
-  } else if (k.startsWith("AQ.")) {
-    formatNote = "⚠️ That looks like a Vertex AI / Cloud Console token, not AI Studio. Free tier limit is way lower (~100/day). Make a key at aistudio.google.com/apikey instead.";
+  if (k.startsWith("AQ.")) {
+    formatNote = "✅ Looks like a current AI Studio key (`AQ.Ab...`). New official format.";
+  } else if (k.startsWith("AIza")) {
+    formatNote = "✅ That's a legacy AI Studio key (`AIza...`). Still works for now, but Google's moving to `AQ.`. Generate a new one to be safe.";
   } else {
-    formatNote = "❓ Unrecognized key format. AI Studio keys start with `AIza`.";
+    formatNote = "❓ Unrecognized key format. Current AI Studio keys start with `AQ.`.";
   }
 
   // 2. Live test (very small request)
