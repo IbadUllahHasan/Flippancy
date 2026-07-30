@@ -546,6 +546,53 @@ saveKeyBtn.addEventListener("click", () => {
   apiKeyInput.value = "";
 });
 
+document.getElementById("verifyKey").addEventListener("click", async () => {
+  const k = apiKeyInput.value.trim();
+  const resultEl = document.getElementById("keyVerifyResult");
+  if (!k) {
+    resultEl.textContent = "Paste a key first.";
+    return;
+  }
+  resultEl.textContent = "Checking…";
+
+  // 1. Format check
+  let formatNote = "";
+  if (k.startsWith("AIza")) {
+    formatNote = "✅ Looks like an AI Studio key (`AIza...`).";
+  } else if (k.startsWith("AQ.")) {
+    formatNote = "⚠️ That looks like a Vertex AI / Cloud Console token, not AI Studio. Free tier limit is way lower (~100/day). Make a key at aistudio.google.com/apikey instead.";
+  } else {
+    formatNote = "❓ Unrecognized key format. AI Studio keys start with `AIza`.";
+  }
+
+  // 2. Live test (very small request)
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(k)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: "ping" }] }],
+        generationConfig: { maxOutputTokens: 4 },
+      }),
+    });
+    const text = await res.text();
+    if (res.ok) {
+      resultEl.innerHTML = `${formatNote}<br>✅ Live test passed — this key works right now.`;
+    } else if (res.status === 429) {
+      resultEl.innerHTML = `${formatNote}<br>❌ Live test got 429 (rate limited). Quota's gone for now.`;
+    } else if (res.status === 403) {
+      resultEl.innerHTML = `${formatNote}<br>❌ Live test got 403. Key is rejected — might be wrong format, restricted, or revoked.`;
+    } else if (res.status === 400) {
+      resultEl.innerHTML = `${formatNote}<br>❌ Live test got 400. Key format wrong or API not enabled. ${escape(text.slice(0, 100))}`;
+    } else {
+      resultEl.innerHTML = `${formatNote}<br>❌ Live test got ${res.status}. ${escape(text.slice(0, 120))}`;
+    }
+  } catch (e) {
+    resultEl.innerHTML = `${formatNote}<br>❌ Network error: ${escape(e.message)}`;
+  }
+});
+
 document.getElementById("resetKey").addEventListener("click", () => {
   if (!confirm("Forget all saved API keys?")) return;
   clearKeys();

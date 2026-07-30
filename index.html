@@ -48,11 +48,13 @@
             <button id="manageKeysBtn" class="ghost hidden">🔑 Manage keys</button>
           </div>
           <div id="apiKeyBar" class="row gap hidden">
-            <input id="apiKeyInput" type="password" placeholder="Paste another Gemini API key (free at aistudio.google.com)" />
+            <input id="apiKeyInput" type="password" placeholder="Paste another Gemini API key (free at aistudio.google.com/apikey)" />
             <button id="saveKey" class="primary">Save key</button>
+            <button id="verifyKey" class="ghost">Verify first</button>
             <button id="resetKey" class="ghost">Reset all</button>
             <span class="sub" id="keyCount"></span>
             <span class="sub">Stored locally, never sent anywhere except Gemini. App rotates on rate limits.</span>
+            <div id="keyVerifyResult" class="sub" style="width:100%;margin-top:6px"></div>
           </div>
 
           <div id="decideResult" class="result hidden"></div>
