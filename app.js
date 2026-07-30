@@ -99,6 +99,8 @@ document.getElementById("decideBtn").addEventListener("click", () => {
   setTimeout(() => {
     const verdict = argue(opts);
     renderResult(opts, verdict);
+    document.getElementById("llmBtn").classList.remove("hidden");
+    document.getElementById("llmBtn").dataset.options = JSON.stringify(opts);
     btn.textContent = "Arguing… I mean, deciding ➜";
     btn.disabled = false;
   }, 700);
@@ -484,4 +486,176 @@ function doImport(mode) {
   importStatus.textContent = `Imported ✓ (${decisions.length} decisions, ${retros.length} retros)`;
   pendingImport = null;
   document.getElementById("importFile").value = "";
+}
+
+// ---------- LLM (Gemini) ----------
+
+const KEY_STORAGE = "flippancy_gemini_key";
+
+function getKey() {
+  return localStorage.getItem(KEY_STORAGE) || "";
+}
+
+function setKey(k) {
+  if (k) localStorage.setItem(KEY_STORAGE, k);
+  else localStorage.removeItem(KEY_STORAGE);
+}
+
+const apiKeyBar = document.getElementById("apiKeyBar");
+const apiKeyInput = document.getElementById("apiKeyInput");
+const llmBtn = document.getElementById("llmBtn");
+const saveKeyBtn = document.getElementById("saveKey");
+
+function refreshKeyUi() {
+  const has = !!getKey();
+  apiKeyBar.classList.toggle("hidden", has);
+  llmBtn.classList.toggle("hidden", !has);
+  if (has) apiKeyInput.value = "";
+}
+
+refreshKeyUi();
+
+saveKeyBtn.addEventListener("click", () => {
+  const k = apiKeyInput.value.trim();
+  if (!k) return;
+  setKey(k);
+  refreshKeyUi();
+  apiKeyInput.value = "";
+});
+
+// show key bar if user clicks the button while no key
+llmBtn.addEventListener("click", () => {
+  if (!getKey()) {
+    apiKeyBar.classList.remove("hidden");
+    apiKeyInput.focus();
+    return;
+  }
+  runLlm();
+});
+
+function buildPrompt(opts, mode) {
+  // The whole point: short, structured, no waffle.
+  return `You are Flippancy, a sharp decision coach. Given a list of options and a tone, return a JSON object ONLY. No prose, no markdown, no code fences.
+
+Tones:
+- gentle: warm, validating, "you already know"
+- brutal: direct, cuts hedging, calls out avoidance
+- sarcastic: dry, playful, light roast
+
+Rules:
+- ONE pro and ONE con per option, each under 14 words.
+- Pick exactly one option.
+- The "verdict" is ONE sentence, under 25 words, matching the tone.
+- The "roast" is OPTIONAL — only include if the user has a real pattern to call out. Max 15 words. If there's nothing genuine to say, omit the field entirely.
+- Never invent context the user didn't give.
+- No disclaimers, no "it depends", no "consider all options equally".
+
+Output schema (return ONLY this JSON):
+{
+  "options": [
+    {"name": "<option text>", "pro": "<short pro>", "con": "<short con>"},
+    ...
+  ],
+  "pick": "<option text>",
+  "verdict": "<one sharp sentence>",
+  "roast": "<optional, omit if nothing real>"
+}
+
+Tone: ${mode}
+Options: ${JSON.stringify(opts)}
+
+Return JSON now.`;
+}
+
+async function runLlm() {
+  const opts = JSON.parse(llmBtn.dataset.options || "[]");
+  if (opts.length < 2) return;
+
+  const originalText = llmBtn.textContent;
+  const phrases = {
+    gentle: "Asking Gemini gently…",
+    brutal: "Asking Gemini to cut the crap…",
+    sarcastic: "Asking Gemini to roll its eyes…",
+  };
+  llmBtn.textContent = phrases[state.mode] || "Thinking…";
+  llmBtn.disabled = true;
+
+  try {
+    const key = getKey();
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: buildPrompt(opts, state.mode) }] }],
+        generationConfig: {
+          temperature: state.mode === "sarcastic" ? 0.9 : 0.4,
+          maxOutputTokens: 600,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Gemini ${res.status}: ${errText.slice(0, 200)}`);
+    }
+
+    const json = await res.json();
+    const raw = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!raw) throw new Error("Empty response from Gemini.");
+
+    // strip any accidental fences just in case
+    const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      throw new Error("Gemini returned non-JSON. Try again.");
+    }
+
+    renderLlmResult(parsed);
+  } catch (err) {
+    const out = document.getElementById("decideResult");
+    out.innerHTML = `
+      <h3>⚠️ Couldn't reach Gemini</h3>
+      <div class="argue"><div class="con">${escape(err.message)}</div></div>
+      <div class="sub" style="margin-top:10px">Check your API key, or try the local take above. <button id="resetKey" class="ghost" style="padding:4px 10px;margin-left:6px">Reset key</button></div>
+    `;
+    out.classList.remove("hidden");
+    document.getElementById("resetKey").onclick = () => {
+      setKey("");
+      refreshKeyUi();
+    };
+  } finally {
+    llmBtn.textContent = originalText;
+    llmBtn.disabled = false;
+  }
+}
+
+function renderLlmResult(p) {
+  const out = document.getElementById("decideResult");
+  const argueHtml = (p.options || [])
+    .map(
+      (o) => `
+        <div>
+          <strong>${escape(o.name)}</strong>
+          <div class="argue">
+            <div class="pro">+ ${escape(o.pro)}</div>
+            <div class="con">− ${escape(o.con)}</div>
+          </div>
+        </div>
+      `
+    )
+    .join("");
+
+  const roast = p.roast ? `<br><br><i>${escape(p.roast)}</i>` : "";
+
+  out.innerHTML = `
+    <h3>✨ The real take</h3>
+    ${argueHtml}
+    <div class="pick">${escape(p.verdict || `Go with ${escape(p.pick)}.`)}${roast}</div>
+  `;
+  out.classList.remove("hidden");
 }

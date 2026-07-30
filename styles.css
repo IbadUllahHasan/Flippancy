@@ -440,6 +440,23 @@ footer {
   display: none;
 }
 
+#apiKeyBar input {
+  flex: 1;
+  min-width: 220px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+#apiKeyBar input:focus {
+  border-color: var(--accent);
+}
+
 @media (max-width: 540px) {
   .hero h2 {
     font-size: 22px;
