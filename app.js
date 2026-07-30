@@ -599,7 +599,19 @@ async function runLlm() {
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`Gemini ${res.status}: ${errText.slice(0, 200)}`);
+      let msg;
+      if (res.status === 429) {
+        msg = "Hit Gemini's free tier rate limit. Wait a minute (or switch keys in Settings).";
+      } else if (res.status === 403) {
+        msg = "API key rejected. Check it's valid at aistudio.google.com/apikey.";
+      } else if (res.status === 400) {
+        msg = "Bad request to Gemini. The prompt might be too long or malformed.";
+      } else {
+        msg = `Gemini error ${res.status}. ${errText.slice(0, 120)}`;
+      }
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
     }
 
     const json = await res.json();
