@@ -488,9 +488,11 @@ function doImport(mode) {
   document.getElementById("importFile").value = "";
 }
 
-// ---------- LLM (Gemini) ----------
+// ---------- LLM (Groq — OpenAI-compatible) ----------
 
-const KEY_STORAGE = "flippancy_gemini_keys";
+const KEY_STORAGE = "flippancy_groq_keys";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_MODEL = "llama-3.3-70b-versatile"; // 30 RPM, 1K/day free
 
 function getKeys() {
   try {
@@ -515,6 +517,9 @@ function addKey(k) {
 
 function clearKeys() {
   localStorage.removeItem(KEY_STORAGE);
+  // also nuke any legacy Gemini keys from earlier versions
+  localStorage.removeItem("flippancy_gemini_key");
+  localStorage.removeItem("flippancy_gemini_keys");
 }
 
 function getKey() {
@@ -555,36 +560,37 @@ document.getElementById("verifyKey").addEventListener("click", async () => {
   }
   resultEl.textContent = "Checking…";
 
-  // 1. Format check (AQ. is the new official format as of 2026)
+  // 1. Format check (Groq keys start with gsk_)
   let formatNote = "";
-  if (k.startsWith("AQ.")) {
-    formatNote = "✅ Looks like a current AI Studio key (`AQ.Ab...`). New official format.";
-  } else if (k.startsWith("AIza")) {
-    formatNote = "✅ That's a legacy AI Studio key (`AIza...`). Still works for now, but Google's moving to `AQ.`. Generate a new one to be safe.";
+  if (k.startsWith("gsk_")) {
+    formatNote = "✅ Looks like a Groq key (`gsk_...`).";
   } else {
-    formatNote = "❓ Unrecognized key format. Current AI Studio keys start with `AQ.`.";
+    formatNote = "❓ Doesn't look like a Groq key (should start with `gsk_`). Get one free at console.groq.com.";
   }
 
   // 2. Live test (very small request)
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(k)}`;
-    const res = await fetch(url, {
+    const res = await fetch(GROQ_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${k}`,
+      },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: "ping" }] }],
-        generationConfig: { maxOutputTokens: 4 },
+        model: GROQ_MODEL,
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 4,
       }),
     });
     const text = await res.text();
     if (res.ok) {
       resultEl.innerHTML = `${formatNote}<br>✅ Live test passed — this key works right now.`;
     } else if (res.status === 429) {
-      resultEl.innerHTML = `${formatNote}<br>❌ Live test got 429 (rate limited). Quota's gone for now.`;
+      resultEl.innerHTML = `${formatNote}<br>❌ Live test got 429 (rate limited). Try again in a minute.`;
+    } else if (res.status === 401) {
+      resultEl.innerHTML = `${formatNote}<br>❌ Live test got 401. Key is invalid or revoked.`;
     } else if (res.status === 403) {
-      resultEl.innerHTML = `${formatNote}<br>❌ Live test got 403. Key is rejected — might be wrong format, restricted, or revoked.`;
-    } else if (res.status === 400) {
-      resultEl.innerHTML = `${formatNote}<br>❌ Live test got 400. Key format wrong or API not enabled. ${escape(text.slice(0, 100))}`;
+      resultEl.innerHTML = `${formatNote}<br>❌ Live test got 403. Key forbidden — check permissions.`;
     } else {
       resultEl.innerHTML = `${formatNote}<br>❌ Live test got ${res.status}. ${escape(text.slice(0, 120))}`;
     }
@@ -629,8 +635,8 @@ llmBtn.addEventListener("click", () => {
 });
 
 function buildPrompt(opts, mode) {
-  // The whole point: short, structured, no waffle.
-  return `You are Flippancy, a sharp decision coach. Given a list of options and a tone, return a JSON object ONLY. No prose, no markdown, no code fences.
+  // Groq uses OpenAI's chat format: system + user messages.
+  const system = `You are Flippancy, a sharp decision coach. Given a list of options and a tone, return a JSON object ONLY. No prose, no markdown, no code fences.
 
 Tones:
 - gentle: warm, validating, "you already know"
@@ -645,21 +651,15 @@ Rules:
 - Never invent context the user didn't give.
 - No disclaimers, no "it depends", no "consider all options equally".
 
-Output schema (return ONLY this JSON):
-{
-  "options": [
-    {"name": "<option text>", "pro": "<short pro>", "con": "<short con>"},
-    ...
-  ],
-  "pick": "<option text>",
-  "verdict": "<one sharp sentence>",
-  "roast": "<optional, omit if nothing real>"
-}
+Output schema (return ONLY this JSON, no other text):
+{"options":[{"name":"<option text>","pro":"<short pro>","con":"<short con>"}],"pick":"<option text>","verdict":"<one sharp sentence>","roast":"<optional, omit if nothing real>"}`;
 
-Tone: ${mode}
+  const user = `Tone: ${mode}
 Options: ${JSON.stringify(opts)}
 
 Return JSON now.`;
+
+  return { system, user };
 }
 
 async function runLlm() {
@@ -668,9 +668,9 @@ async function runLlm() {
 
   const originalText = llmBtn.textContent;
   const phrases = {
-    gentle: "Asking Gemini gently…",
-    brutal: "Asking Gemini to cut the crap…",
-    sarcastic: "Asking Gemini to roll its eyes…",
+    gentle: "Asking Groq gently…",
+    brutal: "Asking Groq to cut the crap…",
+    sarcastic: "Asking Groq to roll its eyes…",
   };
   llmBtn.textContent = phrases[state.mode] || "Thinking…";
   llmBtn.disabled = true;
@@ -685,6 +685,8 @@ async function runLlm() {
   }
 
   let lastErr = null;
+  const { system, user } = buildPrompt(opts, state.mode);
+
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
     try {
@@ -692,27 +694,29 @@ async function runLlm() {
         ? (phrases[state.mode] || "Thinking…")
         : `Key ${i + 1}/${keys.length} (retry)…`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
-
-      const res = await fetch(url, {
+      const res = await fetch(GROQ_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${key}`,
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: buildPrompt(opts, state.mode) }] }],
-          generationConfig: {
-            temperature: state.mode === "sarcastic" ? 0.9 : 0.4,
-            maxOutputTokens: 600,
-            responseMimeType: "application/json",
-          },
+          model: GROQ_MODEL,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          temperature: state.mode === "sarcastic" ? 0.9 : 0.4,
+          max_tokens: 600,
+          response_format: { type: "json_object" },
         }),
       });
 
-      if (res.status === 429 || res.status === 403) {
-        // try next key
+      if (res.status === 429 || res.status === 401) {
         lastErr = new Error(
           res.status === 429
             ? `Key #${i + 1} hit rate limit.`
-            : `Key #${i + 1} rejected.`
+            : `Key #${i + 1} unauthorized — check the key.`
         );
         lastErr.status = res.status;
         continue;
@@ -722,30 +726,30 @@ async function runLlm() {
         const errText = await res.text();
         let msg;
         if (res.status === 400) {
-          msg = "Bad request to Gemini. The prompt might be too long or malformed.";
+          msg = `Bad request. ${errText.slice(0, 150)}`;
         } else {
-          msg = `Gemini error ${res.status}. ${errText.slice(0, 120)}`;
+          msg = `Groq error ${res.status}. ${errText.slice(0, 120)}`;
         }
         throw new Error(msg);
       }
 
       const json = await res.json();
-      const raw = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!raw) throw new Error("Empty response from Gemini.");
+      const raw = json?.choices?.[0]?.message?.content;
+      if (!raw) throw new Error("Empty response from Groq.");
 
       const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
       let parsed;
       try {
         parsed = JSON.parse(cleaned);
       } catch {
-        throw new Error("Gemini returned non-JSON. Try again.");
+        throw new Error("Groq returned non-JSON. Try again.");
       }
 
       renderLlmResult(parsed);
       lastErr = null;
       break;
     } catch (err) {
-      if (err.status === 429 || err.status === 403) continue;
+      if (err.status === 429 || err.status === 401) continue;
       lastErr = err;
       break;
     }
