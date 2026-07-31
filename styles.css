@@ -457,6 +457,46 @@ footer {
   border-color: var(--accent);
 }
 
+.hist-opt {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.hist-opt:hover {
+  color: var(--text);
+}
+
+.hist-opt.active {
+  background: var(--accent);
+  color: white;
+}
+
+#settings .q textarea {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.55;
+  transition: border 0.15s ease;
+}
+
+#settings .q textarea:focus {
+  border-color: var(--accent);
+}
+
 @media (max-width: 540px) {
   .hero h2 {
     font-size: 22px;

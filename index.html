@@ -17,6 +17,7 @@
           <button class="tab active" data-tab="decide">🎯 Decide</button>
           <button class="tab" data-tab="retro">📓 Retro</button>
           <button class="tab" data-tab="history">🕒 History</button>
+          <button id="openSettings" class="ghost" title="Settings">⚙️</button>
           <button id="theme" class="ghost" title="Toggle theme">🌗</button>
         </nav>
       </header>
@@ -98,6 +99,34 @@
           </div>
 
           <div id="historyList" class="history"></div>
+        </section>
+
+        <!-- SETTINGS -->
+        <section id="settings" class="panel">
+          <div class="hero">
+            <h2>Settings</h2>
+            <p class="sub">Make Flippancy actually know you.</p>
+          </div>
+
+          <div class="q">
+            <label>About me <span class="hint">— a few lines, your own words. Sent to the LLM with every "real take" so advice stops being generic.</span></label>
+            <textarea id="aboutMe" rows="6" placeholder="Who are you, what do you care about, what's the current situation?&#10;&#10;e.g. I'm a 25yo dev, burned out on my job, debating going indie. I keep starting side projects and dropping them after 2 weeks. Money's tight but not desperate. I value freedom over stability but I'm scared of running out of runway."></textarea>
+            <div class="row gap" style="margin-top:8px">
+              <button id="saveAbout" class="primary">Save</button>
+              <span id="aboutStatus" class="sub"></span>
+            </div>
+          </div>
+
+          <div class="q" style="margin-top:20px">
+            <label>How much history should the LLM see? <span class="hint">— for pattern-spotting. Older entries are ignored.</span></label>
+            <div class="modes" role="tablist">
+              <button class="hist-opt active" data-count="0">Off</button>
+              <button class="hist-opt" data-count="5">Last 5</button>
+              <button class="hist-opt" data-count="10">Last 10</button>
+              <button class="hist-opt" data-count="20">Last 20</button>
+            </div>
+            <div class="sub" style="margin-top:6px">Only entries from the last 30 days are used, even if you pick "Last 20".</div>
+          </div>
         </section>
       </main>
 

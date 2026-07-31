@@ -7,6 +7,7 @@ const THEME_KEY = "flippancy_theme";
 const state = {
   mode: "gentle",
   retroType: "daily",
+  varyTemp: false, // bumped by Regenerate to get a different take
 };
 
 // ---------- storage ----------
@@ -55,6 +56,50 @@ document.querySelectorAll(".tab").forEach((btn) => {
     document.getElementById(btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "history") renderHistory();
     if (btn.dataset.tab === "retro") renderRetroForm();
+  });
+});
+
+document.getElementById("openSettings").addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+  document.getElementById("settings").classList.add("active");
+  // mark no main tab as active (it's the gear, not a tab)
+});
+
+// ---------- settings: about me + history count ----------
+
+const ABOUT_KEY = "flippancy_about_me";
+const HIST_KEY = "flippancy_history_count";
+const aboutEl = document.getElementById("aboutMe");
+const aboutStatus = document.getElementById("aboutStatus");
+const saveAboutBtn = document.getElementById("saveAbout");
+
+aboutEl.value = localStorage.getItem(ABOUT_KEY) || "";
+document.getElementById("aboutStatus").textContent = aboutEl.value ? "Saved" : "";
+
+saveAboutBtn.addEventListener("click", () => {
+  const v = aboutEl.value.trim();
+  if (v) {
+    localStorage.setItem(ABOUT_KEY, v);
+    aboutStatus.textContent = "Saved ✓";
+  } else {
+    localStorage.removeItem(ABOUT_KEY);
+    aboutStatus.textContent = "Cleared.";
+  }
+  setTimeout(() => (aboutStatus.textContent = v ? "Saved" : ""), 2000);
+});
+
+function getHistoryCount() {
+  return parseInt(localStorage.getItem(HIST_KEY) || "5", 10);
+}
+
+document.querySelectorAll(".hist-opt").forEach((btn) => {
+  const c = parseInt(btn.dataset.count, 10);
+  if (c === getHistoryCount()) btn.classList.add("active");
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".hist-opt").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    localStorage.setItem(HIST_KEY, String(c));
   });
 });
 
@@ -634,9 +679,46 @@ llmBtn.addEventListener("click", () => {
   runLlm();
 });
 
+function buildContext() {
+  const about = (localStorage.getItem(ABOUT_KEY) || "").trim();
+  const count = getHistoryCount();
+  let historyBlock = "";
+
+  if (count > 0) {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000; // 30 days
+    const recentDecisions = data.decisions
+      .filter((d) => new Date(d.createdAt).getTime() >= cutoff)
+      .slice(0, count);
+    const recentRetros = data.retros
+      .filter((r) => new Date(r.createdAt).getTime() >= cutoff)
+      .slice(0, Math.max(2, Math.ceil(count / 2)));
+
+    const decLines = recentDecisions.map((d) => {
+      const opts = d.options.map((o) => o.length > 30 ? o.slice(0, 30) + "…" : o).join(" | ");
+      return `  - picked "${d.pick}" from [${opts}] (${d.mode})`;
+    }).join("\n");
+
+    const retLines = recentRetros.map((r) => {
+      const parts = Object.entries(r.answers || {})
+        .filter(([, v]) => v && v.trim())
+        .map(([k, v]) => `${k}: ${v.length > 200 ? v.slice(0, 200) + "…" : v}`)
+        .join("; ");
+      return parts ? `  - [${r.type}] ${parts}` : "";
+    }).filter(Boolean).join("\n");
+
+    if (decLines || retLines) {
+      historyBlock = `\n\nRecent history (last 30 days, used for pattern-spotting — do not invent beyond this):
+${decLines}${retLines ? "\n" + retLines : ""}`;
+    }
+  }
+
+  return { about, historyBlock };
+}
+
 function buildPrompt(opts, mode) {
-  // Groq uses OpenAI's chat format: system + user messages.
-  const system = `You are Flippancy, a sharp decision coach. Given a list of options and a tone, return a JSON object ONLY. No prose, no markdown, no code fences.
+  const { about, historyBlock } = buildContext();
+
+  const system = `You are Flippancy, a sharp decision coach. Given a list of options, a tone, and (optionally) context about the user, return a JSON object ONLY. No prose, no markdown, no code fences.
 
 Tones:
 - gentle: warm, validating, "you already know"
@@ -644,26 +726,28 @@ Tones:
 - sarcastic: dry, playful, light roast
 
 Rules:
+- Use the "About me" context and recent history to make your advice SPECIFIC to this person. Reference their actual situation, not generic advice.
+- If you see a real pattern in their history (e.g. always picking the safe option, repeat indecision on the same theme), you can call it out in the roast. Only roast patterns that genuinely show up in the data.
 - ONE pro and ONE con per option, each under 14 words.
 - Pick exactly one option.
-- The "verdict" is ONE sentence, under 25 words, matching the tone.
-- The "roast" is OPTIONAL — only include if the user has a real pattern to call out. Max 15 words. If there's nothing genuine to say, omit the field entirely.
-- Never invent context the user didn't give.
-- No disclaimers, no "it depends", no "consider all options equally".
+- The "verdict" is ONE sentence, under 25 words, matching the tone. It should feel like advice to a specific person, not a template.
+- The "roast" is OPTIONAL — only include if there's a genuine pattern. Max 15 words. Omit if nothing real.
+- Never invent context the user didn't give. If no About me is provided, give general-but-honest advice without fabricating personal details.
 
 Output schema (return ONLY this JSON, no other text):
 {"options":[{"name":"<option text>","pro":"<short pro>","con":"<short con>"}],"pick":"<option text>","verdict":"<one sharp sentence>","roast":"<optional, omit if nothing real>"}`;
 
-  const user = `Tone: ${mode}
-Options: ${JSON.stringify(opts)}
+  const userParts = [`Tone: ${mode}`];
+  if (about) userParts.push(`About me:\n${about}`);
+  if (historyBlock) userParts.push(historyBlock.trim());
+  userParts.push(`Options: ${JSON.stringify(opts)}`);
+  userParts.push("Return JSON now.");
 
-Return JSON now.`;
-
-  return { system, user };
+  return { system, user: userParts.join("\n\n") };
 }
 
-async function runLlm() {
-  const opts = JSON.parse(llmBtn.dataset.options || "[]");
+async function runLlm(optsOverride = null) {
+  const opts = optsOverride || JSON.parse(llmBtn.dataset.options || "[]");
   if (opts.length < 2) return;
 
   const originalText = llmBtn.textContent;
@@ -706,11 +790,13 @@ async function runLlm() {
             { role: "system", content: system },
             { role: "user", content: user },
           ],
-          temperature: state.mode === "sarcastic" ? 0.9 : 0.4,
+          temperature: state.varyTemp ? 0.9 : (state.mode === "sarcastic" ? 0.9 : 0.4),
           max_tokens: 600,
           response_format: { type: "json_object" },
         }),
       });
+
+      state.varyTemp = false; // reset after each call
 
       if (res.status === 429 || res.status === 401) {
         lastErr = new Error(
@@ -796,6 +882,28 @@ function renderLlmResult(p) {
     <h3>✨ The real take</h3>
     ${argueHtml}
     <div class="pick">${escape(p.verdict || `Go with ${escape(p.pick)}.`)}${roast}</div>
+    <div class="row gap" style="margin-top:12px">
+      <button id="regenBtn" class="ghost">🔁 Regenerate</button>
+      <button id="tweakBtn" class="ghost">🎚 Same options, different tone</button>
+    </div>
   `;
   out.classList.remove("hidden");
+
+  const regen = document.getElementById("regenBtn");
+  const tweak = document.getElementById("tweakBtn");
+
+  regen.onclick = () => {
+    state.varyTemp = true;
+    runLlm();
+  };
+
+  tweak.onclick = () => {
+    const tones = ["gentle", "brutal", "sarcastic"];
+    const next = tones[(tones.indexOf(state.mode) + 1) % tones.length];
+    document.querySelectorAll(".mode").forEach((b) => {
+      b.classList.toggle("active", b.dataset.mode === next);
+    });
+    state.mode = next;
+    runLlm();
+  };
 }
